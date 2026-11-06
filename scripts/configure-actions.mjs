@@ -6,7 +6,7 @@ const require=createRequire(import.meta.url),auth=require('firebase-tools/lib/au
 const project='johns-tutoring',repository='JohnComputers/tutoring-manager',accountId='tutoring-manager-reminders';
 const email=`${accountId}@${project}.iam.gserviceaccount.com`;
 if(process.env.CONFIGURE_ACTIONS_APPLY!=='true'){
-  console.log('Dry run: create a dedicated reminder service account with roles/datastore.user, store its key only in this repository Actions secret, and disable public Firebase signup. Set CONFIGURE_ACTIONS_APPLY=true to apply.');
+  console.log('Dry run: create a dedicated reminder service account with roles/datastore.user, store its key only in this repository Actions secret, and enable verified workspace signup. Set CONFIGURE_ACTIONS_APPLY=true to apply.');
 }else{
   let stage='authenticate';
   try{
@@ -34,8 +34,8 @@ if(process.env.CONFIGURE_ACTIONS_APPLY!=='true'){
       if(result.status!==0){await client.request({url:`https://iam.googleapis.com/v1/${key.name}`,method:'DELETE'});throw new Error('Failed to save Actions secret; the unused key was revoked.');}
       console.log('Dedicated Firebase service-account key stored directly in GitHub Actions secrets.');
     }else console.log('Existing service-account Actions secret preserved.');
-    stage='disable-public-signup';
-    await client.request({url:`https://identitytoolkit.googleapis.com/admin/v2/projects/${project}/config?updateMask=client.permissions.disabledUserSignup`,method:'PATCH',data:{client:{permissions:{disabledUserSignup:true}}}});
-    console.log('Public Firebase signup disabled; the existing owner sign-in is preserved.');
+    stage='enable-public-signup';
+    await client.request({url:`https://identitytoolkit.googleapis.com/admin/v2/projects/${project}/config?updateMask=client.permissions.disabledUserSignup`,method:'PATCH',data:{client:{permissions:{disabledUserSignup:false}}}});
+    console.log('Firebase signup enabled; private workspace rules protect accounts and preserve owner access.');
   }catch(e){console.error(`Actions setup stopped at ${stage} (${e.response?.status??'local configuration error'}): ${String(e.response?.data?.error?.message??e.message).slice(0,250)}`);process.exitCode=1;}
 }

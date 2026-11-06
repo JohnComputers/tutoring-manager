@@ -1,4 +1,5 @@
-import {collection,doc,getDoc,onSnapshot,query,orderBy,limit,runTransaction,serverTimestamp,setDoc,updateDoc} from 'firebase/firestore';
+import {getDoc,onSnapshot,query,orderBy,limit,runTransaction,serverTimestamp,setDoc,updateDoc} from 'firebase/firestore';
+import {doc,collection} from '@/firebase/workspace';
 import {db} from '@/firebase/config';
 import {offlineGuard} from '@/shared/engine';
 import {blankStudent,contactMatches,ms,type Student,type Lesson,type Detail} from './model';

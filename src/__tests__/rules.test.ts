@@ -55,3 +55,11 @@ describe('server-side public booking enforcement',()=>{
  it('rejects private field injection and claiming another booking time',async()=>{await assertFails(batchBooking(anon(),'private',{internalNotes:'injected'}).commit());await assertFails(batchBooking(anon(),'pii',{studentId:'private-link'}).commit());});
  it('does not let the public clear a bitmap',async()=>{await assertSucceeds(batchBooking(anon(),'exists').commit());await assertFails(updateDoc(doc(anon(),'dayClaims',dayId(utcDay(last))),{bitmap:EMPTY_DAY}));});
 });
+
+describe('isolated personal workspaces',()=>{
+ const account=(uid:string,verified=true)=>env.authenticatedContext(uid,{email_verified:verified}).firestore();
+ it('lets verified accounts manage every personal feature without admin membership',async()=>{for(const kind of ['students','bookings','sessionDetails','payments','settings','managerSettings','exceptions','slotLocks','dayClaims','availabilityDays','history','migrations']){const ref=doc(account('alice'),'workspaces/alice/'+kind+'/sample');await assertSucceeds(setDoc(ref,{sample:true}));await assertSucceeds(getDoc(ref));}});
+ it('denies cross-account access, including the integrated administrator',async()=>{await assertSucceeds(setDoc(doc(account('alice'),'workspaces/alice/students/sample'),{name:'Private'}));for(const database of [anon(),account('bob'),owner()]){await assertFails(getDoc(doc(database,'workspaces/alice/students/sample')));await assertFails(setDoc(doc(database,'workspaces/alice/payments/sample'),{amount:100}));}});
+ it('rejects unverified accounts and tenant attempts to use global records or worker queues',async()=>{await assertFails(setDoc(doc(account('alice',false),'workspaces/alice/students/sample'),{}));for(const path of ['admins/alice','students/sample','managerSettings/preferences','notificationRequests/sample','workspaces/alice/admins/sample','workspaces/alice/notificationRequests/sample'])await assertFails(setDoc(doc(account('alice'),path),{}));await assertFails(getDocs(collection(account('alice'),'bookings')));});
+ it('keeps personal lesson history immutable',async()=>{const ref=doc(account('alice'),'workspaces/alice/history/sample');await assertSucceeds(setDoc(ref,{action:'created'}));await assertFails(updateDoc(ref,{action:'changed'}));await assertFails(deleteDoc(ref));});
+});

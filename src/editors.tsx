@@ -1,5 +1,6 @@
 import {useMemo,useRef,useState} from 'react';
-import {doc,runTransaction,serverTimestamp} from 'firebase/firestore';
+import {runTransaction,serverTimestamp} from 'firebase/firestore';
+import {doc,isIntegrated} from '@/firebase/workspace';
 import {db} from '@/firebase/config';
 import {saveLessons,recurringStarts,changeLessonStatus,intervalGrains,offlineGuard} from '@/shared/engine';
 import {toDateKey,minutesOfDayIn,toTimeInputValue,zonedTimeToUtc,wallTimeExists,todayDateKey} from '@/utils/time';
@@ -47,7 +48,7 @@ export function LessonEditor({lesson,start,students,lessons,details,payments,sch
       const starts=recurringStarts(at,lesson?1:repeat,every,schedule.timezone);
       const seriesId=current?.seriesId??(repeat>1?crypto.randomUUID():'');
       await saveLessons(starts.map(start=>({id:lesson?.id,expectedUpdatedAt:lesson?ms(lesson.updatedAt):undefined,start,duration,before,after,parentName:student.parentName,studentName:student.childName,email:student.email,phone:student.phone,subject,status,internalNotes:notes,meta:{studentId,price:Math.round(price*100),location,topics,progress,homework,nextSteps,seriesId,availabilityOverride:override,source:current?.source??'manual'}})),{overrideAvailability:override,expectedTimezone:openedTimezone.current});
-      onSaved(repeat>1?`${repeat} recurring lessons saved together.`:'Lesson saved. Both calendars are up to date.');onClose();
+      onSaved(repeat>1?`${repeat} recurring lessons saved together.`:isIntegrated()?'Lesson saved. Both calendars are up to date.':'Lesson saved.');onClose();
     }catch(e){setError(e instanceof Error?e.message:'Could not save the lesson.');}finally{setBusy(false);}
   };
   async function cancel(){if(!lesson||!window.confirm('Cancel this lesson and release its time? Payment history and notes will remain.'))return;setBusy(true);try{await changeLessonStatus(lesson.id,'cancelled');onSaved('Lesson canceled. Its time is available again.');onClose();}catch(e){setError(String(e));}finally{setBusy(false);}}

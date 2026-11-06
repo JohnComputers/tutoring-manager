@@ -50,3 +50,10 @@ Gmail SMTP/app-password setup requires the owner’s Google account security flo
 - Continuous deployment/security evidence: [manager Actions](https://github.com/JohnComputers/tutoring-manager/actions), [public site Actions](https://github.com/JohnComputers/math-tutoring/actions). Both repositories deploy `main` using GitHub Pages Actions.
 
 Actual Gmail delivery remains unverified and disabled until `SMTP_PASSWORD` is supplied and the owner-only test is received. No student or guardian is an automatic email recipient.
+
+
+## Personal accounts update
+
+Registration is now enabled intentionally. Verified users access only their own `workspaces/{uid}` collections. The integrated owner retains the existing root calendar and role allowlist; registration never grants access to those records. Personal accounts do not use the owner's Gmail worker, booking site, notification queue, or service-account credentials. The rules deny cross-workspace reads/writes even to the original client administrator. Existing owner-only signup statements above describe the earlier release.
+
+Validation for the personal-account release: 96 unit tests and 55 emulator integration/security/outbox tests passed. Browser QA passed registration, verification, private workspace initialization, first student/lesson persistence, and hidden owner integrations, alongside the original owner workflow. Firebase registration is enabled and the matching privacy rules are deployed. No test accounts or fixture records were created in production.

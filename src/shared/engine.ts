@@ -1,5 +1,6 @@
 /** Shared with math-tutoring. UTC grains retain their original IDs. No private data in permits/claims. */
-import { collection, doc, getDocFromServer, getDocsFromServer, onSnapshot, query, runTransaction, serverTimestamp, Timestamp, where, type Transaction } from 'firebase/firestore';
+import { getDocFromServer, getDocsFromServer, onSnapshot, query, runTransaction, serverTimestamp, Timestamp, where, type Transaction } from 'firebase/firestore';
+import {doc,collection} from '@/firebase/workspace';
 import { db } from '@/firebase/config';
 import type { AvailabilityException, Booking, SchedulingSettings } from '@/types';
 import { DEFAULT_SCHEDULING } from '@/services/defaults';

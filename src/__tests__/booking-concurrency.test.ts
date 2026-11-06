@@ -1,5 +1,5 @@
 import {afterAll,beforeAll,beforeEach,describe,expect,it} from 'vitest';
-import {initializeApp as adminApp} from 'firebase-admin/app';
+import {initializeApp as adminApp,getApp} from 'firebase-admin/app';
 import {getFirestore as adminFirestore} from 'firebase-admin/firestore';
 import {createUserWithEmailAndPassword,signInWithEmailAndPassword,signOut} from 'firebase/auth';
 import {collection,doc,getDoc,getDocs,onSnapshot,query,where} from 'firebase/firestore';
@@ -7,6 +7,9 @@ import {auth,db} from '../firebase/config';
 import {DEFAULT_SCHEDULING} from '../services/defaults';
 import {saveLessons,changeLessonStatus,permitDocuments,publishAvailability,recurringStarts,watchBookings,EMPTY_DAY,utcDay,dayId} from '../shared/engine';
 import {addDays,todayDateKey,zonedTimeToUtc} from '../utils/time';
+import {setWorkspace} from '../firebase/workspace';
+import {saveRecord} from '../data';
+import {getAuth as adminAuth} from 'firebase-admin/auth';
 import {createBooking} from '../services/bookings';
 const admin=adminFirestore(adminApp({projectId:'rules-test'},'integration-fixtures'));
 const zone='America/New_York',date=addDays(todayDateKey(zone),14),at=(minute:number)=>zonedTimeToUtc(date,minute,zone);
@@ -37,4 +40,8 @@ describe('real two-way transactions',()=>{
  it('preserves public notes and atomically saves private notes when a lesson moves',async()=>{await signInWithEmailAndPassword(auth(),'owner@example.test','emulator-only-password');const [id]=await saveLessons([{...lesson(900),notes:'Original guardian note',internalNotes:'Private owner note'}]);await saveLessons([{...lesson(960),id}]);const saved=(await getDoc(doc(db(),'bookings',id!))).data()!;expect(saved.notes).toBe('Original guardian note');expect(saved.internalNotes).toBe('Private owner note');});
  it('rejects a stale editor without overwriting a newer lesson',async()=>{await signInWithEmailAndPassword(auth(),'owner@example.test','emulator-only-password');const [id]=await saveLessons([lesson(900)]);const original=(await getDoc(doc(db(),'bookings',id!))).data()!;await saveLessons([{...lesson(960),id}]);await expect(saveLessons([{...lesson(1020),id,expectedUpdatedAt:original.updatedAt.toMillis()}])).rejects.toThrow(/another window/);expect((await getDoc(doc(db(),'bookings',id!))).data()?.startAt.toMillis()).toBe(at(960).getTime());});
  it('a forged legacy lockIds list cannot release another lesson’s reservation',async()=>{await signInWithEmailAndPassword(auth(),'owner@example.test','emulator-only-password');const [victim]=await saveLessons([lesson(900)]);const [attacker]=await saveLessons([lesson(1080)]);const victimData=(await admin.doc('bookings/'+victim).get()).data()!;await admin.doc('bookings/'+attacker).update({lockIds:victimData.lockIds});await changeLessonStatus(attacker!,'cancelled');expect((await getDoc(doc(db(),'slotLocks',victimData.lockIds[0]))).data()?.bookingId).toBe(victim);});
+});
+
+it('personal accounts use independent reservations and CRM while the integrated calendar stays untouched',async()=>{
+ try{for(const email of ['alice@example.test','bob@example.test']){const credential=await createUserWithEmailAndPassword(auth(),email,'emulator-only-password').catch(()=>signInWithEmailAndPassword(auth(),email,'emulator-only-password'));const id=credential.user.uid;await adminAuth(getApp('integration-fixtures')).updateUser(id,{emailVerified:true});await signInWithEmailAndPassword(auth(),email,'emulator-only-password');setWorkspace(id);await admin.doc(`workspaces/${id}/settings/scheduling`).set(schedule);await admin.doc(`workspaces/${id}/migrations/manager-v2`).set({version:2});const [booking]=await saveLessons([lesson(900)]);await saveRecord('students',{childName:'Private Student'},'student');await saveRecord('payments',{bookingId:booking,amount:1000},'payment');await expect(saveLessons([lesson(900)])).rejects.toThrow(/overlap/);expect((await admin.collection(`workspaces/${id}/bookings`).get()).size).toBe(1);await changeLessonStatus(booking!,'cancelled');expect((await admin.collection(`workspaces/${id}/slotLocks`).get()).empty).toBe(true);}expect((await admin.collection('bookings').get()).empty).toBe(true);expect((await admin.collection('students').get()).empty).toBe(true);expect((await admin.collection('payments').get()).empty).toBe(true);}finally{setWorkspace(null);}
 });

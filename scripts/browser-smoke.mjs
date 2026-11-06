@@ -7,7 +7,7 @@ const errors=[];page.on('pageerror',e=>errors.push(e.message));
 await mkdir('qa',{recursive:true});
 try{
   await page.goto(process.env.QA_URL??'http://127.0.0.1:5178/tutoring-manager/',{waitUntil:'domcontentloaded',timeout:60000});
-  await page.getByRole('heading',{name:'Welcome back, John.'}).waitFor({timeout:60000});
+  await page.getByRole('heading',{name:'Welcome back.'}).waitFor({timeout:60000});
   await page.screenshot({path:'qa/login-desktop.png',fullPage:true});
   if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw new Error('Desktop layout overflows.');
   await page.setViewportSize({width:390,height:844});

@@ -1,6 +1,14 @@
-# Tutorly · Tutoring Manager
+# Tutorly · Private tutoring workspaces
 
-An owner-only React/Vite/TypeScript workspace for John Williams’s existing tutoring practice. The frontend is public on GitHub Pages; student records, calendar details, notes, finances, and settings require the **existing Firebase owner account and `admins/{uid}` membership**.
+Anyone can create an email/password account at https://johncomputers.github.io/tutoring-manager/. Verify your email, then choose **I’ve verified my email**. Password reset is available on the sign-in screen.
+
+Each verified account owns an isolated `workspaces/{Firebase UID}/…` namespace containing calendar reservations, students, session notes, payments, reports, availability, history, and preferences. Another account—including the original integrated administrator—cannot access that namespace through the client. An account never gains `admins` membership by registering. Account changes reload the application to clear private in-memory data.
+
+New users get the day/week/month/agenda calendar, recurring lessons, collision prevention, CRM, import/export, notes, payment tracking, reports, availability, themes, and customization. Their availability is for their own calendar; no public booking website is created or connected. Automated Gmail reminders and the original website integration remain exclusive to the existing owner. These controls are hidden for standalone accounts.
+
+The existing owner keeps the original root-level data and live `math-tutoring` integration without migration. The original setup notes below describe that integrated workspace. Firebase email/password signup is now enabled; verified-email workspace rules replace the previous owner-only registration policy. New registrations share the existing Firebase Spark quotas, so capacity remains subject to Firebase's free limits.
+
+The original integrated React/Vite/TypeScript workspace for John Williams’s existing tutoring practice. The frontend is public on GitHub Pages; student records, calendar details, notes, finances, and settings require the **existing Firebase owner account and `admins/{uid}` membership**.
 
 - Workspace: https://johncomputers.github.io/tutoring-manager/
 - Public booking site: https://johncomputers.github.io/math-tutoring/
@@ -24,7 +32,7 @@ Optional profile fields can be shown/hidden with checkboxes and reordered with u
 
 ## Setup checklist
 
-Firebase configuration, the authorized GitHub Pages domain, the existing owner allowlist, disabled public signup, and the dedicated Actions service account are configured. `SMTP_USER` and `OWNER_EMAIL` are also configured from the existing owner record. The only missing credential is `SMTP_PASSWORD`. Reminders remain disabled until Gmail delivery is tested. See `AUDIT.md` for verification evidence.
+Firebase configuration, the authorized GitHub Pages domain, the existing owner allowlist, verified workspace signup, and the dedicated Actions service account are configured. `SMTP_USER` and `OWNER_EMAIL` are also configured from the existing owner record. The only missing credential is `SMTP_PASSWORD`. Reminders remain disabled until Gmail delivery is tested. See `AUDIT.md` for verification evidence.
 
 1. In [repository Actions secrets](https://github.com/JohnComputers/tutoring-manager/settings/secrets/actions), add:
    - `SMTP_USER`: your sending Gmail address.

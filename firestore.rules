@@ -95,6 +95,12 @@ service cloud.firestore {
         && old[from:to] == zeros()[0:to-from]
         && c.bitmap == prefix+ones()[0:to-from]+suffix;
     }
+    match /workspaces/{uid}/{kind}/{id} {
+      function ownWorkspace() { return request.auth != null && request.auth.uid == uid && request.auth.token.email_verified == true; }
+      allow read: if ownWorkspace() && kind in ['bookings','students','sessionDetails','payments','managerSettings','settings','exceptions','slotLocks','dayClaims','availabilityDays','history','migrations'];
+      allow create: if ownWorkspace() && kind in ['bookings','students','sessionDetails','payments','managerSettings','settings','exceptions','slotLocks','dayClaims','availabilityDays','history','migrations'];
+      allow update,delete: if ownWorkspace() && kind in ['bookings','students','sessionDetails','payments','managerSettings','settings','exceptions','slotLocks','dayClaims','availabilityDays'];
+    }
     match /admins/{uid} {
       allow get: if request.auth != null && request.auth.uid == uid;
       allow list,write: if false;
