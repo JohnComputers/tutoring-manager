@@ -13,7 +13,7 @@ export function notificationPlan({now,lastRun,settings,bookings,details,payments
   const line=b=>`${DateTime.fromMillis(millis(b.startAt),{zone}).toFormat('ccc, LLL d · h:mm a ZZZZ')} — ${b.studentName} · ${b.subject||'Tutoring'} (${b.durationMinutes} min)`;
   const live=bookings.filter(b=>!['cancelled','completed','noShow'].includes(b.status));
   if(settings.enabled){
-    const leads=[...new Set(String(settings.leads??'1440,60').split(',').map(Number).filter(n=>Number.isFinite(n)&&n>=0&&n<=10080))];
+    const leads=[...new Set(String(settings.leads??'1440,60').split(',').map(Number).filter(n=>Number.isFinite(n)&&n>=1&&n<=10080))];
     live.forEach(b=>{const start=millis(b.startAt);if(start<=now)return;leads.forEach(lead=>{const due=start-lead*60000;if(due<=now&&due>=since)add(`reminder-${b.id}-${start}-${lead}`,'Upcoming lesson',`A lesson is coming up`,line(b));});});
     if(settings.daily&&local.hour>=Number(settings.dailyHour??7)){
       const agenda=live.filter(b=>DateTime.fromMillis(millis(b.startAt),{zone}).toISODate()===today).sort((a,b)=>millis(a.startAt)-millis(b.startAt));

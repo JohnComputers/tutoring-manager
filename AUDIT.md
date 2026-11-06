@@ -29,8 +29,24 @@ Source audited: `JohnComputers/math-tutoring`, initial HEAD `b162d31ed5611d4fe0b
 - `johncomputers.github.io` already exists in Firebase authorized domains, so the new path needs no additional domain.
 - Dedicated `tutoring-manager-reminders` service account configured with `roles/datastore.user`; its JSON key piped directly into `FIREBASE_SERVICE_ACCOUNT` in the new repository.
 - Public Firebase signup disabled after confirming the existing owner account.
-- Final deployment, migration, and test evidence is recorded below after verification.
+- Non-destructive v2 migration completed; the existing 3 bookings and 1 admin membership were preserved.
+- Initial Pages deployments and scheduling/security workflows succeeded in both repositories.
+- `SMTP_USER` and `OWNER_EMAIL` configured from the existing owner record. Notifications remain disabled pending the Gmail app password.
 
 ## Remaining external credential
 
-Gmail SMTP/app-password setup requires the owner’s Google account security flow. No Gmail app password was available in this session. Add the SMTP/recipient Actions secrets described in README, enable the desired preferences, and send the owner-only test. Actual Gmail delivery cannot be claimed before that step succeeds.
+Gmail SMTP/app-password setup requires the owner’s Google account security flow. No Gmail app password was available in this session. Add the `SMTP_PASSWORD` Actions secret described in README, enable the desired preferences, and send the owner-only test. The sender, recipient, and Firebase service-account secrets are already configured. Actual Gmail delivery cannot be claimed before that step succeeds.
+
+
+## Final verification (2026-11-06)
+
+- Manager: **96 unit tests + 50 emulator integration/security/outbox tests passed**. Public site: **74 unit tests passed**; its 46 shared integration/security tests are byte-identical to the passing manager tests.
+- Both TypeScript checks and production Vite builds passed. Shared rules, indexes, engine, types, time/slot utilities, booking adapters, and shared security tests are identical in both repositories.
+- Authenticated browser testing against real local Firebase emulators passed: sign-in, create lesson and private notes, global search, partial payment, actual calendar event, student timeline, publish availability, reports, theme/field visibility/order persistence, and 390-pixel mobile overflow checks. Fixtures are restricted to local emulators and were never written to production.
+- Live Firestore rules/indexes deployed successfully after refreshing the existing permits with timezone offsets and clock transitions. Rules validate local-date boundaries and DST as well as UTC occupancy.
+- Read-only live audit after deployment: **1 admin, 3 bookings, 0 missing teaching locks, 0 missing occupancy grains**. Public scheduling/permit reads succeeded; anonymous reads of bookings, students, session details, payments, and manager settings were denied.
+- Rolling availability renewal has also succeeded using the dedicated GitHub Actions identity. It updates the existing schedule's permits and never rewrites reservations.
+- Live URLs: [owner workspace](https://johncomputers.github.io/tutoring-manager/), [public tutoring site](https://johncomputers.github.io/math-tutoring/).
+- Continuous deployment/security evidence: [manager Actions](https://github.com/JohnComputers/tutoring-manager/actions), [public site Actions](https://github.com/JohnComputers/math-tutoring/actions). Both repositories deploy `main` using GitHub Pages Actions.
+
+Actual Gmail delivery remains unverified and disabled until `SMTP_PASSWORD` is supplied and the owner-only test is received. No student or guardian is an automatic email recipient.

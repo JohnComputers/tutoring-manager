@@ -1,13 +1,33 @@
 import {describe,it,expect} from 'vitest';
 import {Timestamp} from 'firebase/firestore';
 import {blankStudent,contactMatches,paidFor} from '../../model';
-import {EMPTY_DAY,intervalGrains,permitMap,recurringStarts,setBits,utcDay} from '../../shared/engine';
+import {EMPTY_DAY,intervalGrains,permitDocuments,permitMap,recurringStarts,setBits,utcDay} from '../../shared/engine';
 import {DEFAULT_SCHEDULING} from '../../services/defaults';
 import {toDateKey,zonedTimeToUtc,minutesOfDayIn} from '../time';
 import {normalizeWeekly,resolvePeriodsForDate} from '../slots';
 // @ts-expect-error MJS is intentionally shared with the secure Node reminder runner.
 import {isQuiet,notificationPlan} from '../../../scripts/reminder-policy.mjs';
 describe('shared scheduling policy',()=>{
+  it('publishes exact timezone clock transitions for server-side local-date policies',()=>{
+    const days=permitDocuments({...DEFAULT_SCHEDULING,maximumAdvanceDays:2},[],new Date('2027-03-13T17:00:00Z'));
+    const spring=days.get(Math.floor(Date.parse('2027-03-14T00:00:00Z')/86400000))!;
+    expect(spring.offsetAtStart).toBe(-5*3600000);expect(spring.transitions).toEqual([{atMs:Date.parse('2027-03-14T07:00:00Z'),offsetMs:-4*3600000}]);
+  });
+  it('never opens an earlier hour when an availability boundary falls in a spring DST gap',()=>{
+    const settings={...DEFAULT_SCHEDULING,maximumAdvanceDays:1,weekendsEnabled:true,weekly:{...DEFAULT_SCHEDULING.weekly,0:{enabled:true,periods:[{start:150,end:240}]}}};
+    const permits=permitMap(settings,[],new Date('2027-03-13T17:00:00Z'));
+    const bit=(iso:string)=>{const g=Math.floor(Date.parse(iso)/300000);return permits.get(utcDay(g))?.[g%288]??'0';};
+    expect(bit('2027-03-14T06:30:00Z')).toBe('0');expect(bit('2027-03-14T07:00:00Z')).toBe('1');expect(bit('2027-03-14T08:00:00Z')).toBe('0');
+  });
+  it('limits both occurrences of a fall-back hour to the actual configured local window',()=>{
+    const settings={...DEFAULT_SCHEDULING,maximumAdvanceDays:1,weekendsEnabled:true,weekly:{...DEFAULT_SCHEDULING.weekly,0:{enabled:true,periods:[{start:60,end:90}]}}};
+    const permits=permitMap(settings,[],new Date('2026-10-31T17:00:00Z'));
+    const bit=(iso:string)=>{const g=Math.floor(Date.parse(iso)/300000);return permits.get(utcDay(g))?.[g%288]??'0';};
+    expect(bit('2026-11-01T05:00:00Z')).toBe('1');expect(bit('2026-11-01T06:00:00Z')).toBe('1');expect(bit('2026-11-01T05:40:00Z')).toBe('0');expect(bit('2026-11-01T06:40:00Z')).toBe('0');
+  });
+  it('preserves the chosen instant when editing a second-fold lesson',()=>{
+    const secondFold=new Date('2026-11-01T06:30:00Z');const starts=recurringStarts(secondFold,1,1,'America/New_York');expect(starts[0]!.getTime()).toBe(secondFold.getTime());
+  });
   it('splits overnight hours onto the next local day, including Saturday to Sunday',()=>{
     const weekly={...DEFAULT_SCHEDULING.weekly,6:{enabled:true,periods:[{start:1320,end:120}]},0:{enabled:false,periods:[]}};
     const normalized=normalizeWeekly(weekly);

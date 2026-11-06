@@ -24,8 +24,8 @@ export async function createBooking(input:CreateBookingInput):Promise<BookingRec
  const confirmationCode=generateConfirmationCode(initialsOf(tutorName));
  const clean={parentName:cleanText(values.parentName),studentName:cleanText(values.studentName),phone:normalisePhone(values.phone),email:cleanText(values.email).toLowerCase(),subject:cleanText(values.subject),notes:cleanMultiline(values.notes)};
  let bookingId:string|undefined;
- try{[bookingId]=await saveLessons([{start,duration:durationMinutes,...clean,confirmationCode}],{public:true});}
- catch(e){if(e instanceof Error&&/overlap/.test(e.message))throw new SlotTakenError();throw e;}
+ try{[bookingId]=await saveLessons([{start,duration:durationMinutes,...clean,confirmationCode}],{public:true,expectedTimezone:scheduling.timezone});}
+ catch(e){if(e instanceof Error&&/overlap/.test(e.message))throw new SlotTakenError();if(e instanceof Error&&/timezone|outside|booking policy/.test(e.message))throw new ValidationError({},e.message);throw e;}
  return {bookingId:bookingId!,confirmationCode,...clean,start,end:new Date(start.getTime()+durationMinutes*60000),durationMinutes,timezone:scheduling.timezone};
 }
 function toBooking(id: string, data: Record<string, unknown>): Booking {
