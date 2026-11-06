@@ -1,0 +1,24 @@
+name: Refresh rolling booking window
+on:
+  schedule:
+    - cron: '11 6 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: availability-refresh
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vite-node --config vite.config.ts scripts/refresh-availability.ts
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_PROJECT_ID: johns-tutoring

@@ -1,0 +1,40 @@
+import {chromium} from '@playwright/test';
+import {initializeApp} from 'firebase-admin/app';
+import {getFirestore,Timestamp} from 'firebase-admin/firestore';
+import {getAuth} from 'firebase-admin/auth';
+import {DateTime} from 'luxon';
+import {mkdir} from 'node:fs/promises';
+import assert from 'node:assert/strict';
+if(process.env.FIRESTORE_EMULATOR_HOST!=='127.0.0.1:8080'||process.env.FIREBASE_AUTH_EMULATOR_HOST!=='127.0.0.1:9099')throw new Error('UI fixtures are restricted to the local Firebase emulators.');
+const app=initializeApp({projectId:'rules-test'},'ui-fixtures'),database=getFirestore(app),authentication=getAuth(app);
+const user=await authentication.createUser({email:'ui-owner@example.test',password:'ui-emulator-password'}).catch(()=>authentication.getUserByEmail('ui-owner@example.test'));
+await database.doc(`admins/${user.uid}`).set({role:'owner'});await database.doc('migrations/manager-v2').set({version:2});
+const weekly=Object.fromEntries([0,1,2,3,4,5,6].map(d=>[d,{enabled:true,periods:[{start:0,end:1440}]}]));
+await database.doc('settings/scheduling').set({timezone:'America/New_York',defaultDurationMinutes:60,sessionDurations:[30,60,90],bufferMinutes:15,minimumNoticeMinutes:0,maximumAdvanceDays:60,weekendsEnabled:true,allowSameDayBookings:true,requireParentEmail:false,studentNotesEnabled:true,bookingIntro:'',privacyNotice:'',weekly,revision:'ui',enforcementVersion:2});
+const base=DateTime.now().setZone('America/New_York').startOf('day');
+for(let n=-1;n<65;n++){const instant=base.plus({days:n}).toUTC().startOf('day'),day=Math.floor(instant.toMillis()/86400000);await database.doc(`availabilityDays/d${day}`).set({day,bitmap:'1'.repeat(288),revision:'ui'});}
+const student={childName:'Sample Student',parentName:'Sample Guardian',grade:'8',school:'',subjects:'Algebra 1',courseLevel:'',email:'sample@example.test',phone:'7865551234',preferredTimes:'',rate:6500,duration:60,tags:'Algebra',color:'#5575b5',goals:'Build confidence with equations.',strengths:'',weaknesses:'',materials:'',notes:'Emulator fixture only.',active:true,customFields:'',recurringSchedule:'',billingNotes:''};
+await database.doc('students/ui-student').set(student);
+const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{})});
+const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+await mkdir('qa',{recursive:true});
+try{
+  await page.goto('http://127.0.0.1:5180/tutoring-manager/',{waitUntil:'domcontentloaded',timeout:60000});
+  await page.getByLabel('Email address',{exact:true}).fill('ui-owner@example.test');await page.getByLabel('Password',{exact:true}).fill('ui-emulator-password');await page.getByRole('button',{name:'Open my workspace'}).click();
+  await page.getByRole('heading',{name:/Good (morning|afternoon), John/}).waitFor({timeout:60000});
+  await page.screenshot({path:'qa/overview-desktop.png',fullPage:true});
+  await page.getByRole('button',{name:'New lesson',exact:true}).first().click();
+  let dialog=page.getByRole('dialog');await dialog.getByLabel('Student',{exact:true}).selectOption('ui-student');
+  const date=base.plus({days:3}).toISODate();await dialog.getByLabel('Date',{exact:true}).fill(date);await dialog.getByLabel('Start time',{exact:false}).fill('16:00');
+  await dialog.getByRole('button',{name:'notes',exact:true}).click();await dialog.getByLabel('Private session notes').fill('UI round-trip note');await dialog.getByLabel('Progress',{exact:true}).fill('A small breakthrough.');await dialog.getByRole('button',{name:'Save lesson',exact:true}).click();await dialog.waitFor({state:'hidden',timeout:30000});
+  const saved=await database.collection('bookings').where('internalNotes','==','UI round-trip note').get();assert.equal(saved.size,1);const booking=saved.docs[0];
+  assert.equal((await database.doc('sessionDetails/'+booking.id).get()).data().progress,'A small breakthrough.');
+  await page.getByLabel('Search workspace').fill('Sample Student');await page.locator('.global-search-results button').filter({hasText:date}).first().click();dialog=page.getByRole('dialog');await dialog.getByRole('button',{name:'payments',exact:true}).click();await dialog.getByLabel('Payment amount').fill('25.00');await dialog.getByRole('button',{name:'Record payment',exact:true}).click();await page.getByRole('status').filter({hasText:'Payment recorded.'}).waitFor();assert.equal((await database.collection('payments').get()).docs[0].data().amount,2500);await dialog.getByRole('button',{name:'Close',exact:true}).last().click();
+  await page.getByRole('link',{name:'Calendar',exact:true}).click();await page.getByRole('heading',{name:'Your calendar'}).waitFor();await page.screenshot({path:'qa/calendar-desktop.png',fullPage:true});
+  await page.getByRole('link',{name:'Students',exact:true}).click();await page.getByRole('button',{name:/Sample Student/}).first().click();dialog=page.getByRole('dialog');await dialog.getByRole('button',{name:'timeline',exact:true}).click();await dialog.getByText('Attendance:',{exact:false}).waitFor();await dialog.getByRole('button',{name:'Close',exact:true}).first().click();
+  await page.getByRole('link',{name:'Availability',exact:true}).click();await page.getByLabel('Minimum notice').fill('60');await page.getByRole('button',{name:'Publish availability',exact:true}).click();await page.getByRole('status').filter({hasText:'Availability published'}).waitFor();assert.equal((await database.doc('settings/scheduling').get()).data().minimumNoticeMinutes,60);
+  await page.getByRole('link',{name:'Reports & finances',exact:true}).click();await page.getByRole('heading',{name:'Progress, by the numbers'}).waitFor();
+  await page.getByRole('link',{name:'Settings & preferences',exact:true}).click();await page.getByLabel('Theme',{exact:true}).selectOption('dark');await page.getByRole('button',{name:'Save preferences',exact:true}).click();await page.getByRole('status').filter({hasText:'Your preferences are saved.'}).waitFor();assert.equal((await database.doc('managerSettings/preferences').get()).data().theme,'dark');
+  await page.setViewportSize({width:390,height:844});await page.screenshot({path:'qa/settings-mobile.png',fullPage:true});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.deepEqual(errors,[]);
+  console.log('Authenticated emulator UI passed: login, lesson + notes, search, payment, calendar, student timeline, availability publication, reports, settings, and mobile overflow.');
+}finally{await browser.close();await database.terminate();}

@@ -1,0 +1,115 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function admin() { return request.auth != null && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); }
+    function schedule() { return get(/databases/$(database)/documents/settings/scheduling).data; }
+    function first(b) { return int(math.floor((b.startAt.toMillis() - b.beforeBuffer * 60000) / 300000.0)); }
+    function last(b) { return int(math.ceil((b.endAt.toMillis() + b.afterBuffer * 60000) / 300000.0)) - 1; }
+    function day(g) { return int(math.floor(g / 288.0)); }
+    function lo(b,d) { return first(b) - d * 288 > 0 ? first(b) - d * 288 : 0; }
+    function hi(b,d) { return last(b) - d * 288 + 1 < 288 ? last(b) - d * 288 + 1 : 288; }
+    function zeros() { return '000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'; }
+    function ones() { return '111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111'; }
+    function claimLinked(id,d) {
+      let c = getAfter(/databases/$(database)/documents/dayClaims/$('d'+string(d))).data;
+      return c.bookingId == id && c.updatedAt == request.time;
+    }
+    function permitted(b,d,s) {
+      let p = get(/databases/$(database)/documents/availabilityDays/$('d'+string(d))).data;
+      let start = int(math.floor(b.startAt.toMillis() / 300000.0))-d*288;
+      let end = int(math.ceil(b.endAt.toMillis() / 300000.0))-d*288;
+      let f = start > 0 ? start : 0;
+      let t = end < 288 ? end : 288;
+      return p.revision == s.revision && p.bitmap[f:t] == ones()[0:t-f];
+    }
+    function validBooking(id) {
+      let b=request.resource.data;
+      let s=schedule();
+      return exists(/databases/$(database)/documents/migrations/manager-v2)
+        && b.keys().hasOnly(['confirmationCode','parentName','studentName','phone','email','subject','notes','startAt','endAt','durationMinutes','dateKey','timezone','status','internalNotes','lockIds','policyAcceptedAt','createdAt','updatedAt','beforeBuffer','afterBuffer','schedulingRevision'])
+        && b.keys().hasAll(['confirmationCode','parentName','studentName','phone','email','subject','notes','startAt','endAt','durationMinutes','dateKey','timezone','status','internalNotes','lockIds','policyAcceptedAt','createdAt','beforeBuffer','afterBuffer','schedulingRevision'])
+        && b.parentName is string && b.parentName.size() >= 2 && b.parentName.size() <= 80
+        && b.studentName is string && b.studentName.size() >= 1 && b.studentName.size() <= 80
+        && b.phone is string && b.phone.size() >= 7 && b.phone.size() <= 20
+        && b.email is string && b.email.size() <= 120
+        && (!s.requireParentEmail || b.email.size() >= 3)
+        && b.subject is string && b.subject.size() <= 80
+        && b.notes is string && b.notes.size() <= 800
+        && b.confirmationCode is string && b.confirmationCode.size() >= 3 && b.confirmationCode.size() <= 16
+        && b.startAt is timestamp && b.endAt is timestamp
+        && b.durationMinutes is int && b.durationMinutes >= 5 && b.durationMinutes <= 480
+        && b.durationMinutes in s.sessionDurations
+        && b.endAt.toMillis()-b.startAt.toMillis() == b.durationMinutes*60000
+        && b.startAt.toMillis() >= request.time.toMillis()+s.minimumNoticeMinutes*60000
+        && b.startAt.toMillis() <= request.time.toMillis()+s.maximumAdvanceDays*86400000
+        && b.beforeBuffer == 0 && b.afterBuffer == s.bufferMinutes
+        && b.timezone == s.timezone && b.dateKey.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && b.status == 'confirmed' && b.internalNotes == ''
+        && b.createdAt == request.time && b.policyAcceptedAt == request.time
+        && b.lockIds is list && b.lockIds.size() == last(b)-first(b)+1 && b.lockIds.size() <= 288
+        && s.enforcementVersion == 2 && b.schedulingRevision == s.revision
+        && claimLinked(id,day(first(b)))
+        && (day(first(b)) == day(last(b)) || claimLinked(id,day(last(b))))
+        && permitted(b,day(int(math.floor(b.startAt.toMillis() / 300000.0))),s)
+        && (day(int(math.floor(b.startAt.toMillis() / 300000.0))) == day(int(math.ceil(b.endAt.toMillis() / 300000.0))-1) || permitted(b,day(int(math.ceil(b.endAt.toMillis() / 300000.0))-1),s));
+    }
+    function validClaim(d,old) {
+      let c=request.resource.data;
+      let b=getAfter(/databases/$(database)/documents/bookings/$(c.bookingId)).data;
+      let from=lo(b,d);
+      let to=hi(b,d);
+      let prefix = from == 0 ? '' : old[0:from];
+      let suffix = to == 288 ? '' : old[to:288];
+      return c.keys().hasOnly(['day','bitmap','bookingId','updatedAt'])
+        && c.day == d && c.bitmap is string && c.bitmap.size() == 288
+        && c.updatedAt == request.time && from >= 0 && to <= 288 && from < to
+        && !exists(/databases/$(database)/documents/bookings/$(c.bookingId))
+        && b.createdAt == request.time
+        && old[from:to] == zeros()[0:to-from]
+        && c.bitmap == prefix+ones()[0:to-from]+suffix;
+    }
+    match /admins/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list,write: if false;
+    }
+    match /settings/{id} { allow read: if true; allow write: if admin(); }
+    match /subjects/{id} { allow read: if true; allow write: if admin(); }
+    match /testimonials/{id} { allow read: if true; allow write: if admin(); }
+    match /exceptions/{id} { allow read: if true; allow write: if admin(); }
+    match /availabilityDays/{id} { allow read: if true; allow write: if admin(); }
+    match /dayClaims/{id} {
+      allow read: if true;
+      allow create: if admin() || (id == 'd'+string(request.resource.data.day) && validClaim(request.resource.data.day,zeros()));
+      allow update: if admin() || (id == 'd'+string(resource.data.day) && validClaim(resource.data.day,resource.data.bitmap));
+      allow delete: if admin();
+    }
+    match /slotLocks/{id} {
+      allow read: if true;
+      allow create: if admin() || (
+        request.resource.data.keys().hasOnly(['grain','bookingId','createdAt'])
+        && id.matches('^g[0-9]{1,12}$') && request.resource.data.grain is int
+        && request.resource.data.grain == int(id[1:id.size()])
+        && request.resource.data.createdAt == request.time
+        && !exists(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId))
+        && getAfter(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.createdAt == request.time
+        && request.resource.data.grain >= first(getAfter(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data)
+        && request.resource.data.grain <= last(getAfter(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data));
+      allow update,delete: if admin();
+    }
+    match /bookings/{id} {
+      allow read,update,delete: if admin();
+      allow create: if admin() || validBooking(id);
+    }
+    // CRM, notes, money, settings, outbox and operational logs are NEVER public.
+    match /students/{id} { allow read,write: if admin(); }
+    match /sessionDetails/{id} { allow read,write: if admin(); }
+    match /payments/{id} { allow read,write: if admin(); }
+    match /history/{id} { allow read,create: if admin(); allow update,delete: if false; }
+    match /managerSettings/{id} { allow read,write: if admin(); }
+    match /notificationRequests/{id} { allow read,create: if admin(); allow update,delete: if false; }
+    match /notificationLogs/{id} { allow read: if admin(); allow write: if false; }
+    match /notificationState/{id} { allow read: if admin(); allow write: if false; }
+    match /migrations/{id} { allow read: if admin(); allow write: if false; }
+    match /{document=**} { allow read,write: if false; }
+  }
+}
